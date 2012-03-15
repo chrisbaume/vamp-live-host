@@ -76,30 +76,8 @@ using Vamp::HostExt::PluginWrapper;
 using Vamp::HostExt::PluginInputDomainAdapter;
 
 #define HOST_VERSION "1.4"
-
-// Portaudio definitions
-
-/* #define SAMPLE_RATE  (17932) // Test failure to open with this value. */
 #define SAMPLE_RATE  (44100)
-/* #define FRAMES_PER_BUFFER (512) // frames to be decided by plugin */
-#define NUM_SECONDS     (5)
-/* #define NUM_CHANNELS    (2) // Write program for mono */
-/* #define DITHER_FLAG     (paDitherOff) */
-#define DITHER_FLAG     (0) /**/
-/** Set to 1 if you want to capture the recording to a file. */
-#define WRITE_TO_FILE   (0)
-
 #define PA_SAMPLE_TYPE  paFloat32
-#define SAMPLE_SILENCE  (0.0f)
-#define PRINTF_S_FORMAT "%.8f"
-
-typedef struct
-{
-    int          frameIndex;  /* Index into sample array. */
-    int          maxFrameIndex;
-    float      *recordedSamples;
-}
-paTestData;
 
 enum Verbosity {
     PluginIds,
@@ -120,25 +98,21 @@ int runPlugin(string myname, string soname, string id, string output,
 
 bool interruptFlag = false;
 
-void interrupt (int param)
-{
-	interruptFlag = true;
-}
+void interrupt (int param) { interruptFlag = true; }
 
 void usage(const char *name)
 {
     cerr << "\n"
-         << name << ": A command-line host for Vamp audio analysis plugins.\n\n"
-        "Centre for Digital Music, Queen Mary, University of London.\n"
-        "Copyright 2006-2009 Chris Cannam and QMUL.\n"
-        "Freely redistributable; published under a BSD-style license.\n\n"
+         << name << ": A command-line host for live Vamp plugin processing.\n\n"
+        "Written by Chris Baume (chris.baume@bbc.co.uk).\n"
+        "Copyright 2012 British Broadcasting Corp.\n\n"
         "Usage:\n\n"
-        "  " << name << " [-s] pluginlibrary[." << PLUGIN_SUFFIX << "]:plugin[:output] file.wav [-o out.txt]\n"
-        "  " << name << " [-s] pluginlibrary[." << PLUGIN_SUFFIX << "]:plugin file.wav [outputno] [-o out.txt]\n\n"
+        "  " << name << " [-s] pluginlibrary[." << PLUGIN_SUFFIX << "]:plugin[:output]\n"
+        "  " << name << " [-s] pluginlibrary[." << PLUGIN_SUFFIX << "]:plugin [outputno]\n\n"
         "    -- Load plugin id \"plugin\" from \"pluginlibrary\" and run it on the\n"
-        "       audio data in \"file.wav\", retrieving the named \"output\", or output\n"
+        "       audio data from the default mic, retrieving the named \"output\", or output\n"
         "       number \"outputno\" (the first output by default) and dumping it to\n"
-        "       standard output, or to \"out.txt\" if the -o option is given.\n\n"
+        "       standard output.\n\n"
         "       \"pluginlibrary\" should be a library name, not a file path; the\n"
         "       standard Vamp library search path will be used to locate it.  If\n"
         "       a file path is supplied, the directory part(s) will be ignored.\n\n"
@@ -172,8 +146,6 @@ void usage(const char *name)
 int throwError(PaError err)
 {
     Pa_Terminate();
-//    if( data.recordedSamples )       /* Sure it is NULL or valid. */
-//        free( data.recordedSamples );
     if( err != paNoError )
     {
         fprintf( stderr, "An error occured while using the portaudio stream\n" );
@@ -215,7 +187,7 @@ int main(int argc, char **argv)
         else ++scooter;
     }
     if (!name || !*name) name = argv[0];
-    
+
     // Display usage if not enough args
     if (argc < 2) usage(name);
 
@@ -260,11 +232,11 @@ int main(int argc, char **argv)
             printPluginCategoryList();
             return 0;
 
-        } else usage(name);
+        } /*else usage(name);*/
     }
 
-    // if invalid argument, display usage
-    if (argc < 3) usage(name);
+    // if argument not on above list, display usage
+//    if (argc < 3) usage(name);
 
     // if first argument is -s, display sample frame
     bool useFrames = false;
@@ -276,37 +248,37 @@ int main(int argc, char **argv)
 
     // read in arguments
     string soname = argv[base];
-    string wavname = argv[base+1];
+//    string wavname = argv[base+1];
     string plugid = "";
     string output = "";
     int outputNo = -1;
-    string outfilename;
+//    string outfilename;
 
-    if (argc >= base+3) {
+    if (argc >= base+2) {
 
-        int idx = base+2;
+        int idx = base+1;
 
         if (isdigit(*argv[idx])) {
             outputNo = atoi(argv[idx++]);
         }
 
-        if (argc == idx + 2) {
-            if (!strcmp(argv[idx], "-o")) {
-                outfilename = argv[idx+1];
-            } else usage(name);
-        } else if (argc != idx) {
-            (usage(name));
-        }
+//        if (argc == idx + 2) {
+//            if (!strcmp(argv[idx], "-o")) {
+//                outfilename = argv[idx+1];
+//            } else usage(name);
+//        } else if (argc != idx) {
+//            (usage(name));
+//        }
     }
 
     // Write blurb
-    cerr << endl << name << ": Running..." << endl;
-    cerr << "Reading file: \"" << wavname << "\", writing to ";
-    if (outfilename == "") {
-        cerr << "standard output" << endl;
-    } else {
-        cerr << "\"" << outfilename << "\"" << endl;
-    }
+//    cerr << endl << name << ": Running..." << endl;
+//    cerr << "Reading file: \"" << wavname << "\", writing to ";
+//    if (outfilename == "") {
+//        cerr << "standard output" << endl;
+//    } else {
+//        cerr << "\"" << outfilename << "\"" << endl;
+//    }
 
     // separate plugin id from library name
     string::size_type sep = soname.find(':');
@@ -347,10 +319,11 @@ int runPlugin(string myname, string soname, string id,
     PaStream*           stream;
     PaError             err = paNoError;
     int					elapsed = 0;
-
-
-    // set up plugin
-    PluginLoader *loader = PluginLoader::getInstance();
+    int					returnValue = 1;
+    RealTime			rt;
+    PluginWrapper		*wrapper = 0;
+    RealTime			adjustment = RealTime::zeroTime;
+    PluginLoader		*loader = PluginLoader::getInstance();
     PluginLoader::PluginKey key = loader->composePluginKey(soname, id);
 
     // load plugin
@@ -358,11 +331,6 @@ int runPlugin(string myname, string soname, string id,
     if (!plugin) {
         cerr << myname << ": ERROR: Failed to load plugin \"" << id
              << "\" from library \"" << soname << "\"" << endl;
-//        sf_close(sndfile);
-//        if (out) {
-//            out->close();
-//            delete out;
-//        }
         return 1;
     }
 
@@ -392,35 +360,14 @@ int runPlugin(string myname, string soname, string id,
     // set up port audio
     fifo = new float[blockSize]();
     recordedSamples = new float[stepSize]();
-//    recordedSamples = (float *) malloc( numBytes );
-//    if( recordedSamples == NULL )
-//    {
-//        printf("Could not allocate record array.\n");
-//        return throwError(err);
-//    }
-//    for( i=0; i<stepSize; i++ ) recordedSamples[i] = 0;
 
     ofstream *out = 0;
     cerr << "Running plugin: \"" << plugin->getIdentifier() << "\"..." << endl;
     cerr << "Using block size = " << blockSize << ", step size = " << stepSize << endl;
 
-    // The channel queries here are for informational purposes only --
-    // a PluginChannelAdapter is being used automatically behind the
-    // scenes, and it will take case of any channel mismatch
-
-//    int minch = plugin->getMinChannelCount();
-//    int maxch = plugin->getMaxChannelCount();
-//    cerr << "Plugin accepts " << minch << " -> " << maxch << " channel(s)" << endl;
-//    cerr << "Sound file has " << channels << " (will mix/augment if necessary)" << endl;
-
+    // display output name
     Plugin::OutputList outputs = plugin->getOutputDescriptors();
     Plugin::OutputDescriptor od;
-
-    int returnValue = 1;
-
-    RealTime rt;
-    PluginWrapper *wrapper = 0;
-    RealTime adjustment = RealTime::zeroTime;
 
     if (outputs.empty()) {
     	cerr << "ERROR: Plugin has no outputs!" << endl;
@@ -446,37 +393,39 @@ int runPlugin(string myname, string soname, string id,
         if (int(outputs.size()) <= outputNo) {
             cerr << "ERROR: Output " << outputNo << " requested, but plugin has only " << outputs.size() << " output(s)" << endl;
             goto done;
-        }        
+        }
     }
 
     od = outputs[outputNo];
     cerr << "Output is: \"" << od.identifier << "\"" << endl;
 
+    // Initialise plugin
     if (!plugin->initialise(1, stepSize, blockSize)) {
         cerr << "ERROR: Plugin initialise (stepSize = " << stepSize << ", blockSize = "
              << blockSize << ") failed." << endl;
         goto done;
     }
 
+    // Compensate timestamp if in freq domain
     wrapper = dynamic_cast<PluginWrapper *>(plugin);
     if (wrapper) {
         PluginInputDomainAdapter *ida =  wrapper->getWrapper<PluginInputDomainAdapter>();
         if (ida) adjustment = ida->getTimestampAdjustment();
     }
 
-
-    /* Record some audio. -------------------------------------------- */
+    // Open portaudio stream
     err = Pa_OpenStream(
     		&stream,
     		&inputParameters,
-    		NULL,                  /* &outputParameters, */
+    		NULL,
     		SAMPLE_RATE,
     		stepSize,
-    		paClipOff,      /* we won't output out of range samples so don't bother clipping them */
-    		NULL, /* no callback, use blocking API */
-    		NULL ); /* no callback, so no callback userData */
+    		paClipOff,
+    		NULL,
+    		NULL );
     if( err != paNoError ) throwError(err);
 
+    // Start the audio stream
     err = Pa_StartStream( stream );
     if( err != paNoError ) throwError(err);
     printf("Now recording!!\n"); fflush(stdout);
@@ -513,64 +462,10 @@ int runPlugin(string myname, string soname, string id,
     delete [] recordedSamples;
     delete [] fifo;
 
-//    for (sf_count_t i = 0; i < sfinfo.frames; i += stepSize) {
-//
-//        int count;
-//
-//        if (sf_seek(sndfile, i, SEEK_SET) < 0) {
-//            cerr << "ERROR: sf_seek failed: " << sf_strerror(sndfile) << endl;
-//            break;
-//        }
-//
-//        if ((count = sf_readf_float(sndfile, filebuf, blockSize)) < 0) {
-//            cerr << "ERROR: sf_readf_float failed: " << sf_strerror(sndfile) << endl;
-//            break;
-//        }
-//
-//        for (int c = 0; c < channels; ++c) {
-//            int j = 0;
-//            while (j < count) {
-//                plugbuf[c][j] = filebuf[j * sfinfo.channels + c];
-//                ++j;
-//            }
-//            while (j < blockSize) {
-//                plugbuf[c][j] = 0.0f;
-//                ++j;
-//            }
-//        }
-//
-//        rt = RealTime::frame2RealTime(i, sfinfo.samplerate);
-//
-//        printFeatures
-//            (RealTime::realTime2Frame(rt + adjustment, sfinfo.samplerate),
-//             sfinfo.samplerate, outputNo, plugin->process(plugbuf, rt),
-//             out, useFrames);
-//
-//        int pp = progress;
-//        progress = lrint((float(i) / sfinfo.frames) * 100.f);
-//        if (progress != pp && out) {
-//            cerr << "\r" << progress << "%";
-//        }
-//    }
-//    if (out) cerr << "\rDone" << endl;
-
-
-
-//    rt = RealTime::frame2RealTime(sfinfo.frames, sfinfo.samplerate);
-
-//    printFeatures(RealTime::realTime2Frame(rt + adjustment, sfinfo.samplerate),
-//                  sfinfo.samplerate, outputNo,
-//                  plugin->getRemainingFeatures(), out, useFrames);
-
     returnValue = 0;
 
 done:
     delete plugin;
-//    if (out) {
-//        out->close();
-//        delete out;
-//    }
-//    sf_close(sndfile);
     return returnValue;
 }
 
