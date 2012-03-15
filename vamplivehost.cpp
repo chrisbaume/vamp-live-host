@@ -1,51 +1,3 @@
-/* -*- c-basic-offset: 4 indent-tabs-mode: nil -*-  vi:set ts=8 sts=4 sw=4: */
-
-/*
-    Vamp
-
-    An API for audio analysis and feature extraction plugins.
-
-    Centre for Digital Music, Queen Mary, University of London.
-    Copyright 2006 Chris Cannam, copyright 2007-2008 QMUL.
-  
-    Permission is hereby granted, free of charge, to any person
-    obtaining a copy of this software and associated documentation
-    files (the "Software"), to deal in the Software without
-    restriction, including without limitation the rights to use, copy,
-    modify, merge, publish, distribute, sublicense, and/or sell copies
-    of the Software, and to permit persons to whom the Software is
-    furnished to do so, subject to the following conditions:
-
-    The above copyright notice and this permission notice shall be
-    included in all copies or substantial portions of the Software.
-
-    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-    EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-    MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
-    NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR
-    ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
-    CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
-    WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-    Except as contained in this notice, the names of the Centre for
-    Digital Music; Queen Mary, University of London; and Chris Cannam
-    shall not be used in advertising or otherwise to promote the sale,
-    use or other dealings in this Software without prior written
-    authorization.
-*/
-
-
-/*
- * This "simple" Vamp plugin host is no longer as simple as it was; it
- * now has a lot of options and includes a lot of code to handle the
- * various useful listing modes it supports.
- *
- * However, the runPlugin function still contains a reasonable
- * implementation of a fairly generic Vamp plugin host capable of
- * evaluating a given output on a given plugin for a sound file read
- * via libsndfile.
- */
-
 #include <vamp-hostsdk/PluginHostAdapter.h>
 #include <vamp-hostsdk/PluginInputDomainAdapter.h>
 #include <vamp-hostsdk/PluginLoader.h>
@@ -75,7 +27,7 @@ using Vamp::HostExt::PluginLoader;
 using Vamp::HostExt::PluginWrapper;
 using Vamp::HostExt::PluginInputDomainAdapter;
 
-#define HOST_VERSION "1.4"
+#define HOST_VERSION "0.1"
 #define SAMPLE_RATE  (44100)
 #define PA_SAMPLE_TYPE  paFloat32
 
@@ -174,7 +126,7 @@ int main(int argc, char **argv)
         fprintf(stderr,"Error: No default input device.\n");
         return throwError(err);
     }
-    inputParameters.channelCount = 1;                    /* stereo input */
+    inputParameters.channelCount = 1;
     inputParameters.sampleFormat = PA_SAMPLE_TYPE;
     inputParameters.suggestedLatency = Pa_GetDeviceInfo( inputParameters.device )->defaultLowInputLatency;
     inputParameters.hostApiSpecificStreamInfo = NULL;
@@ -232,11 +184,8 @@ int main(int argc, char **argv)
             printPluginCategoryList();
             return 0;
 
-        } /*else usage(name);*/
+        }
     }
-
-    // if argument not on above list, display usage
-//    if (argc < 3) usage(name);
 
     // if first argument is -s, display sample frame
     bool useFrames = false;
@@ -248,11 +197,9 @@ int main(int argc, char **argv)
 
     // read in arguments
     string soname = argv[base];
-//    string wavname = argv[base+1];
     string plugid = "";
     string output = "";
     int outputNo = -1;
-//    string outfilename;
 
     if (argc >= base+2) {
 
@@ -261,24 +208,7 @@ int main(int argc, char **argv)
         if (isdigit(*argv[idx])) {
             outputNo = atoi(argv[idx++]);
         }
-
-//        if (argc == idx + 2) {
-//            if (!strcmp(argv[idx], "-o")) {
-//                outfilename = argv[idx+1];
-//            } else usage(name);
-//        } else if (argc != idx) {
-//            (usage(name));
-//        }
     }
-
-    // Write blurb
-//    cerr << endl << name << ": Running..." << endl;
-//    cerr << "Reading file: \"" << wavname << "\", writing to ";
-//    if (outfilename == "") {
-//        cerr << "standard output" << endl;
-//    } else {
-//        cerr << "\"" << outfilename << "\"" << endl;
-//    }
 
     // separate plugin id from library name
     string::size_type sep = soname.find(':');
