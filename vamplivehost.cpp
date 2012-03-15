@@ -54,6 +54,8 @@
 #include <fstream>
 #include <set>
 #include <sndfile.h>
+#include <signal.h>
+#include <deque>
 
 #include <cstring>
 #include <cstdlib>
@@ -88,7 +90,6 @@ using Vamp::HostExt::PluginInputDomainAdapter;
 #define WRITE_TO_FILE   (0)
 
 #define PA_SAMPLE_TYPE  paFloat32
-typedef float SAMPLE;
 #define SAMPLE_SILENCE  (0.0f)
 #define PRINTF_S_FORMAT "%.8f"
 
@@ -96,7 +97,7 @@ typedef struct
 {
     int          frameIndex;  /* Index into sample array. */
     int          maxFrameIndex;
-    SAMPLE      *recordedSamples;
+    float      *recordedSamples;
 }
 paTestData;
 
@@ -115,7 +116,14 @@ void printPluginCategoryList();
 void enumeratePlugins(Verbosity);
 void listPluginsInLibrary(string soname);
 int runPlugin(string myname, string soname, string id, string output,
-              int outputNo, string inputFile, string outfilename, bool frames, PaStreamParameters inputParameters);
+              int outputNo, bool frames, PaStreamParameters inputParameters);
+
+bool interruptFlag = false;
+
+void interrupt (int param)
+{
+	interruptFlag = true;
+}
 
 void usage(const char *name)
 {
@@ -178,6 +186,8 @@ int throwError(PaError err)
 
 int main(int argc, char **argv)
 {
+	signal(SIGINT, interrupt);
+
 	// Portaudio code
     PaStreamParameters  inputParameters;
     PaError             err = paNoError;
@@ -322,8 +332,7 @@ int main(int argc, char **argv)
         outputNo = 0;
     }
 
-    int result = runPlugin(name, soname, plugid, output, outputNo,
-                     wavname, outfilename, useFrames, inputParameters);
+    int result = runPlugin(name, soname, plugid, output, outputNo, useFrames, inputParameters);
 
     Pa_Terminate();
 
@@ -331,24 +340,21 @@ int main(int argc, char **argv)
 }
 
 int runPlugin(string myname, string soname, string id,
-              string output, int outputNo, string wavname,
-              string outfilename, bool useFrames, PaStreamParameters inputParameters)
+              string output, int outputNo, bool useFrames, PaStreamParameters inputParameters)
 {
-    SAMPLE *recordedSamples;
+    float				*recordedSamples;
+    float				*fifo;
     PaStream*           stream;
     PaError             err = paNoError;
-    int                 totalFrames;
-    int                 numSamples;
-    int                 numBytes;
-    int                 i;
+    int					elapsed = 0;
+
 
     // set up plugin
     PluginLoader *loader = PluginLoader::getInstance();
     PluginLoader::PluginKey key = loader->composePluginKey(soname, id);
 
     // load plugin
-    Plugin *plugin = loader->loadPlugin
-        (key, SAMPLE_RATE, PluginLoader::ADAPT_ALL_SAFE);
+    Plugin *plugin = loader->loadPlugin(key, SAMPLE_RATE, PluginLoader::ADAPT_ALL_SAFE);
     if (!plugin) {
         cerr << myname << ": ERROR: Failed to load plugin \"" << id
              << "\" from library \"" << soname << "\"" << endl;
@@ -383,60 +389,27 @@ int runPlugin(string myname, string soname, string id,
         cerr << blockSize << endl;
     }
 
-    // set up pulse audio
-    numSamples = stepSize;
-    numBytes = numSamples * sizeof(SAMPLE);
-    recordedSamples = (SAMPLE *) malloc( numBytes );
-    if( recordedSamples == NULL )
-    {
-        printf("Could not allocate record array.\n");
-        return throwError(err);
-    }
-    for( i=0; i<numSamples; i++ ) recordedSamples[i] = 0;
-
-
-    
-//    SNDFILE *sndfile;
-//    SF_INFO sfinfo;
-//    memset(&sfinfo, 0, sizeof(SF_INFO));
-
-//    sndfile = sf_open(wavname.c_str(), SFM_READ, &sfinfo);
-//    if (!sndfile) {
-//	cerr << myname << ": ERROR: Failed to open input file \""
-//             << wavname << "\": " << sf_strerror(sndfile) << endl;
-//	return 1;
+    // set up port audio
+    fifo = new float[blockSize]();
+    recordedSamples = new float[stepSize]();
+//    recordedSamples = (float *) malloc( numBytes );
+//    if( recordedSamples == NULL )
+//    {
+//        printf("Could not allocate record array.\n");
+//        return throwError(err);
 //    }
+//    for( i=0; i<stepSize; i++ ) recordedSamples[i] = 0;
 
     ofstream *out = 0;
-//    if (outfilename != "") {
-//        out = new ofstream(outfilename.c_str(), ios::out);
-//        if (!*out) {
-//            cerr << myname << ": ERROR: Failed to open output file \""
-//                 << outfilename << "\" for writing" << endl;
-//            delete out;
-//            return 1;
-//        }
-//    }
-
-
-
     cerr << "Running plugin: \"" << plugin->getIdentifier() << "\"..." << endl;
-
-
-
-    // initialise plugbuf
-//    float *filebuf = new float[blockSize * channels];
-    float* plugbuf = new float[numSamples];
-
-    cerr << "Using block size = " << blockSize << ", step size = "
-              << stepSize << endl;
+    cerr << "Using block size = " << blockSize << ", step size = " << stepSize << endl;
 
     // The channel queries here are for informational purposes only --
     // a PluginChannelAdapter is being used automatically behind the
     // scenes, and it will take case of any channel mismatch
 
-    int minch = plugin->getMinChannelCount();
-    int maxch = plugin->getMaxChannelCount();
+//    int minch = plugin->getMinChannelCount();
+//    int maxch = plugin->getMaxChannelCount();
 //    cerr << "Plugin accepts " << minch << " -> " << maxch << " channel(s)" << endl;
 //    cerr << "Sound file has " << channels << " (will mix/augment if necessary)" << endl;
 
@@ -444,7 +417,6 @@ int runPlugin(string myname, string soname, string id,
     Plugin::OutputDescriptor od;
 
     int returnValue = 1;
-    int progress = 0;
 
     RealTime rt;
     PluginWrapper *wrapper = 0;
@@ -488,10 +460,7 @@ int runPlugin(string myname, string soname, string id,
 
     wrapper = dynamic_cast<PluginWrapper *>(plugin);
     if (wrapper) {
-        // See documentation for
-        // PluginInputDomainAdapter::getTimestampAdjustment
-        PluginInputDomainAdapter *ida =
-            wrapper->getWrapper<PluginInputDomainAdapter>();
+        PluginInputDomainAdapter *ida =  wrapper->getWrapper<PluginInputDomainAdapter>();
         if (ida) adjustment = ida->getTimestampAdjustment();
     }
 
@@ -502,7 +471,7 @@ int runPlugin(string myname, string soname, string id,
     		&inputParameters,
     		NULL,                  /* &outputParameters, */
     		SAMPLE_RATE,
-    		numSamples,
+    		stepSize,
     		paClipOff,      /* we won't output out of range samples so don't bother clipping them */
     		NULL, /* no callback, use blocking API */
     		NULL ); /* no callback, so no callback userData */
@@ -512,28 +481,37 @@ int runPlugin(string myname, string soname, string id,
     if( err != paNoError ) throwError(err);
     printf("Now recording!!\n"); fflush(stdout);
 
-    err = Pa_ReadStream( stream, recordedSamples, numSamples );
-    if( err != paNoError ) throwError(err);
+    // do until interruptFlag is true
+    while (1)
+    {
+    	// read step of audio data
+    	err = Pa_ReadStream( stream, recordedSamples, stepSize );
+    	if( err != paNoError ) throwError(err);
 
-    printf("Stream read.\n"); fflush(stdout);
+    	// shift buffer along a step size
+    	for (int i=stepSize; i<blockSize; i++) fifo[i-stepSize] = fifo[i];
 
+    	// add new step onto end
+    	for (int i=0; i<stepSize; i++) fifo[blockSize-stepSize+i] = recordedSamples[i];
+
+    	// process and print features
+    	rt = RealTime::frame2RealTime(elapsed*stepSize, SAMPLE_RATE);
+    	printFeatures(RealTime::realTime2Frame(rt + adjustment, SAMPLE_RATE), SAMPLE_RATE, outputNo, plugin->process(&fifo, rt), out, useFrames);
+
+    	// note number of blocks processed
+    	elapsed++;
+
+    	// break out of loop
+    	if (interruptFlag) break;
+    }
+
+    // stop the audio stream
     err = Pa_CloseStream( stream );
     if( err != paNoError ) throwError(err);
 
-    printf("Stream closed.\n"); fflush(stdout);
-
-    for (int i=0; i<numSamples; i++)
-    {
-    	plugbuf[i] = recordedSamples[i];
-    	printf("%f\n", plugbuf[i]);
-    }
-
-    printf("Finished copying to plugbuf.\n"); fflush(stdout);
-
-    rt = RealTime::frame2RealTime(0, SAMPLE_RATE);
-    printFeatures(RealTime::realTime2Frame(rt, SAMPLE_RATE), SAMPLE_RATE, outputNo,	plugin->process(&recordedSamples, rt), out, useFrames);
-
-    free( recordedSamples );
+    // clean up variables
+    delete [] recordedSamples;
+    delete [] fifo;
 
 //    for (sf_count_t i = 0; i < sfinfo.frames; i += stepSize) {
 //
