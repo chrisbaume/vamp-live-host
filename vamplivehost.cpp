@@ -358,7 +358,7 @@ int runPlugin(string myname, string soname, string id,
     // Start the audio stream
     err = Pa_StartStream( stream );
     if( err != paNoError ) throwError(err);
-    printf("Now recording!!\n"); fflush(stdout);
+//    printf("Now recording!!\n"); fflush(stdout);
 
     // do until interruptFlag is true
     while (1)
