@@ -39,12 +39,12 @@ enum Verbosity {
 };
 
 void printFeatures(int, int, int, Plugin::FeatureSet, ofstream *, bool frames);
-void transformInput(float *, size_t);
-void fft(unsigned int, bool, double *, double *, double *, double *);
+//void transformInput(float *, size_t);
+//void fft(unsigned int, bool, double *, double *, double *, double *);
 void printPluginPath(bool verbose);
 void printPluginCategoryList();
 void enumeratePlugins(Verbosity);
-void listPluginsInLibrary(string soname);
+//void listPluginsInLibrary(string soname);
 int runPlugin(string myname, string soname, string id, string output,
               int outputNo, bool frames, PaStreamParameters inputParameters);
 

@@ -1,0 +1,10 @@
+Build instructions:
+
+1. Install portaudio v19 development files
+   sudo apt-get install portaudio19-dev
+
+2. Install and compile Vamp SDK from www.vamp-plugins.org/develop.html
+
+3. Modify Makefile to point at Vamp SDK folder.
+
+4. make
